@@ -1,0 +1,173 @@
+/**************************************************************
+ * Proyecto: Control de Humedad con LCD y Relés
+ * Autor: Yael Arquero Peinazo
+ * Fecha: 23/10/2025
+ *
+ * Descripción:
+ * Este código controla un sistema de humidificación y ventilación
+ * basado en los valores de humedad y temperatura obtenidos por un
+ * sensor DHT11. Se utilizan relés para activar un pulverizador
+ * y un ventilador según umbrales definidos. Además, se muestra
+ * toda la información en un LCD Shield y se indica mediante un
+ * pulsador flotador si hay agua disponible. 
+ * Cuando el tanque está vacío, el sistema entra en modo de bajo
+ * consumo (IDLE) y muestra el estado de reposo en el LCD.
+ *
+ * Características principales:
+ * - Control por umbrales de humedad: HUM_MIN, HUM_MID, HUM_MAX.
+ * - Relé del pulverizador activo por pulsos cuando la humedad es baja.
+ * - Relé del ventilador activo cuando la humedad supera HUM_MAX.
+ * - Indicador en LCD de humedad, temperatura y estado del flotador.
+ * - Modo de ahorro de energía con pantalla LCD activa (IDLE).
+ *
+ * Ejemplos de Arduino que sirvieron de referencia:
+ * - "DHT sensor library" -> Ejemplos de lectura de DHT11.
+ * - "LiquidCrystal" -> Ejemplos de manejo de LCD 16x2.
+ * - "DigitalReadSerial" -> Ejemplo de lectura de pulsadores.
+ * - "LowPower" -> Ejemplo de modo IDLE para ahorro de energía.
+ *
+  * Parámetros modificables:
+ * - HUM_MIN: umbral inferior de humedad para activar pulverizador.
+ * - HUM_MID: umbral medio para apagar pulverizador / ventilador.
+ * - HUM_MAX: umbral superior de humedad para activar ventilador.
+ * - pulseInterval: intervalo en milisegundos entre pulsos del pulverizador.
+ *
+ * Nota sobre ahorro de energía:
+ * - Actualmente se utiliza LowPower.idle() para mantener el LCD activo.
+ * - Si se quisiera un mayor ahorro, se podría usar LowPower.powerDown()
+ *   para suspender completamente el microcontrolador, pero la pantalla
+ *   dejaría de mostrar información.
+ *
+ * Nota:
+ * Este proyecto está pensado como trabajo universitario, 
+ * integrando sensores, actuadores y técnicas básicas de ahorro de energía
+ * de manera sencilla y comprensible.
+ **************************************************************/
+// LIBRERÍAS
+#include <LiquidCrystal.h>
+#include <DHT.h>
+#include <LowPower.h> 
+
+// CONFIGURACIÓN DEL DHT
+#define DHTPIN A3
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// CONFIGURACIÓN LCD SHIELD
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+
+// PINES DE RELÉS Y FLOTADOR
+#define RELE_PULVERIZADOR 2
+#define RELE_VENTILADOR 3
+#define FLOTADOR_PIN A1
+
+// UMBRALES DE HUMEDAD
+float HUM_MIN = 55.0;
+float HUM_MID = 60.0;
+float HUM_MAX = 70.0;
+
+// TIEMPO DE PULSOS
+unsigned long lastPulse = 0;
+unsigned long pulseInterval = 2000;
+bool pulseState = false;
+
+void setup() {
+  lcd.begin(16, 2);
+  dht.begin();
+  Serial.begin(9600);
+
+  pinMode(RELE_PULVERIZADOR, OUTPUT);
+  pinMode(RELE_VENTILADOR, OUTPUT);
+  pinMode(FLOTADOR_PIN, INPUT_PULLUP);  // Flotador cerrado = sin agua
+
+  digitalWrite(RELE_PULVERIZADOR, HIGH);
+  digitalWrite(RELE_VENTILADOR, HIGH);
+
+  lcd.print("Control Humedad");
+  delay(1500);
+  lcd.clear();
+}
+
+void loop() {
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    lcd.setCursor(0, 0);
+    lcd.print("Error sensor DHT");
+    Serial.println("Error al leer el sensor DHT");
+    delay(2000);
+    return;
+  }
+
+  bool sinAgua = !digitalRead(FLOTADOR_PIN); // LOW(pulsado) = sin agua
+
+  // Mostrar datos básicos
+  Serial.print("Humedad: ");
+  Serial.print(h);
+  Serial.print("% | Temp: ");
+  Serial.print(t);
+  Serial.print("°C | Agua: ");
+  Serial.println(sinAgua ? "SIN" : "CON");
+
+  bool pulverizadorActivo = false;
+  bool ventiladorActivo = false;
+
+  // --- CONTROL DE HUMEDAD ---
+  if (!sinAgua) { // Hay agua
+    // Pulverizador
+    if (h <= HUM_MIN) {
+      unsigned long now = millis();
+      if (now - lastPulse > pulseInterval) {
+        pulseState = !pulseState;
+        digitalWrite(RELE_PULVERIZADOR, pulseState ? LOW : HIGH);
+        lastPulse = now;
+      }
+      pulverizadorActivo = pulseState;
+    } else if (h >= HUM_MID) {
+      digitalWrite(RELE_PULVERIZADOR, HIGH);
+      pulseState = false;
+    }
+
+    // Ventilador
+    if (h >= HUM_MAX) {
+      digitalWrite(RELE_VENTILADOR, LOW);
+      ventiladorActivo = true;
+    } else if (h <= HUM_MID) {
+      digitalWrite(RELE_VENTILADOR, HIGH);
+    }
+
+    // Mostrar en LCD
+    lcd.setCursor(0, 0);
+    lcd.print("H:"); lcd.print(h, 1);
+    lcd.print("% T:"); lcd.print(t, 1);
+    lcd.setCursor(0, 1);
+    lcd.print("Agua: o          "); // Hay agua, además quita las zZzZz si hubiera
+
+  } else {
+    // Sin agua → apagar relés y entrar en modo ahorro
+    digitalWrite(RELE_PULVERIZADOR, HIGH);
+    digitalWrite(RELE_VENTILADOR, HIGH);
+    lcd.setCursor(0, 1);
+    lcd.print("Agua: x   zZzZzZ"); // 
+
+    Serial.println("Sin agua: modo reposo (IDLE)");
+
+    // Mantiene LCD encendido, pero duerme la CPU 8 s
+    LowPower.idle(SLEEP_8S, ADC_ON, TIMER2_ON, TIMER1_ON, TIMER0_ON,
+                  SPI_ON, USART0_ON, TWI_ON);
+
+    return; 
+  }
+
+  // Si ambos relés están apagados → también puede dormirse brevemente
+  if (!pulverizadorActivo && !ventiladorActivo) {
+    Serial.println("Modo IDLE (reposo breve)...");
+    digitalWrite(RELE_PULVERIZADOR, HIGH);
+    digitalWrite(RELE_VENTILADOR, HIGH);
+    LowPower.idle(SLEEP_500MS, ADC_ON, TIMER2_ON, TIMER1_ON, TIMER0_ON,
+                  SPI_ON, USART0_ON, TWI_ON);
+  }
+
+  delay(500);
+}
