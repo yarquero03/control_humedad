@@ -23,7 +23,6 @@
  * Ejemplos de Arduino que sirvieron de referencia:
  * - "DHT sensor library" -> Ejemplos de lectura de DHT11.
  * - "LiquidCrystal" -> Ejemplos de manejo de LCD 16x2.
- * - "DigitalReadSerial" -> Ejemplo de lectura de pulsadores.
  * - "LowPower" -> Ejemplo de modo IDLE para ahorro de energía.
  *
   * Parámetros modificables:
