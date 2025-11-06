@@ -139,7 +139,7 @@ void loop() {
     // Mostrar en LCD
     lcd.setCursor(0, 0);
     lcd.print("H:"); lcd.print(h, 1);
-    lcd.print("% T:"); lcd.print(t, 1);
+    lcd.print("% T:"); lcd.print(t, 1); lcd.print("  ", 1);
     lcd.setCursor(0, 1);
     lcd.print("Agua: o          "); // Hay agua, además quita las zZzZz si hubiera
 
